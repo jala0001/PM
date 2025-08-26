@@ -76,11 +76,15 @@ const AnimatedPointLogo = ({ width = 190, height = 40, onAnimationComplete }: {
     heartScale.value = withDelay(1500, withTiming(1, { 
       duration: 300, 
       easing: Easing.back(1.2)
-    }, () => {
+    }, (finished) => {
       // Animation er færdig - vent 500ms ekstra, så kald callback
-      if (onAnimationComplete) {
+      if (finished && onAnimationComplete) {
         setTimeout(() => {
-          onAnimationComplete();
+          try {
+            onAnimationComplete();
+          } catch (error) {
+            console.log("Callback error:", error);
+          }
         }, 500);
       }
     }));
