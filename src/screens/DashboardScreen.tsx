@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,8 +8,10 @@ import {
   StatusBar,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import Svg, { Polyline, Rect, Text as SvgText, Line, G } from 'react-native-svg';
+import MerchantApiService from '../services/api';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -81,64 +83,43 @@ const formatCurrency = (num: number): string => {
 
 const DashboardScreen = () => {
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('today');
+  
+  // Nye state variabler til API data
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [merchantInfo, setMerchantInfo] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Dummy data for forskellige tidsperioder
-  const statsData = {
-    today: {
-      customers: "47",
-      transactions: "23", 
-      revenue: "12.450",
-      subtitle: "I dag"
-    },
-    week: {
-      customers: "234",
-      transactions: "156",
-      revenue: "67.890",
-      subtitle: "Sidste 7 dage"
-    },
-    twoWeeks: {
-      customers: "445",
-      transactions: "298",
-      revenue: "134.560",
-      subtitle: "Sidste 14 dage"
-    },
-    month: {
-      customers: "892",
-      transactions: "567",
-      revenue: "278.340",
-      subtitle: "Sidste måned"
-    }
-  };
+  // Hent ALT data når komponenten mounter - ét smart API kald! 🚀
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        console.log('🚀 Henter ALT data på én gang...');
+        
+        // Parallelle API kald for bedre performance
+        const [analyticsResponse, merchantResponse] = await Promise.all([
+          MerchantApiService.getMerchantAnalytics('talent-garden'),
+          MerchantApiService.getMerchantInfo('talent-garden')
+        ]);
+        
+        console.log('✅ Data hentet succesfuldt!');
+        
+        setAnalyticsData(analyticsResponse.data);
+        setMerchantInfo(merchantResponse.data);
+        
+      } catch (err) {
+        console.error('❌ Fejl ved hentning af data:', err);
+        setError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  // Chart data for forskellige tidsperioder
-  const chartData = {
-    today: [
-      { time: '08:00', customers: 5, transactions: 3, revenue: 850 },
-      { time: '10:00', customers: 12, transactions: 8, revenue: 2340 },
-      { time: '12:00', customers: 25, transactions: 15, revenue: 5680 },
-      { time: '14:00', customers: 38, transactions: 20, revenue: 8920 },
-      { time: '16:00', customers: 47, transactions: 23, revenue: 12450 },
-    ],
-    week: [
-      { time: 'Man', customers: 42, transactions: 28, revenue: 8650 },
-      { time: 'Tir', customers: 38, transactions: 25, revenue: 7890 },
-      { time: 'Ons', customers: 52, transactions: 34, revenue: 12340 },
-      { time: 'Tor', customers: 45, transactions: 31, revenue: 9870 },
-      { time: 'Fre', customers: 67, transactions: 42, revenue: 15680 },
-      { time: 'Lør', customers: 89, transactions: 58, revenue: 21450 },
-      { time: 'Søn', customers: 71, transactions: 46, revenue: 17560 },
-    ],
-    twoWeeks: [
-      { time: 'Uge 1', customers: 198, transactions: 142, revenue: 45680 },
-      { time: 'Uge 2', customers: 247, transactions: 156, revenue: 88880 },
-    ],
-    month: [
-      { time: 'Uge 1', customers: 198, transactions: 142, revenue: 45680 },
-      { time: 'Uge 2', customers: 247, transactions: 156, revenue: 88880 },
-      { time: 'Uge 3', customers: 223, transactions: 134, revenue: 67890 },
-      { time: 'Uge 4', customers: 224, transactions: 135, revenue: 75890 },
-    ],
-  };
+    fetchData();
+  }, []); // Tom dependency array = kun kør når komponenten mounter
 
   const tabs = [
     { key: 'today', label: 'I dag' },
@@ -147,13 +128,51 @@ const DashboardScreen = () => {
     { key: 'month', label: 'Måned' },
   ] as const;
 
-  const currentStats = statsData[selectedPeriod];
-  const currentChartData = chartData[selectedPeriod];
+  // Hvis vi loader, vis loading screen
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#000" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4FD300" />
+          <Text style={styles.loadingText}>Henter dashboard data...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
-  // Chart helper functions
+  // Hvis der er en fejl, vis error screen
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#000" />
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>😕 Noget gik galt</Text>
+          <Text style={styles.errorMessage}>{error}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={() => {
+              setIsLoading(true);
+              setError(null);
+              // Trigger useEffect igen (du kan også lave en retry funktion)
+            }}
+          >
+            <Text style={styles.retryButtonText}>Prøv igen</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Nu har vi data! Brug det fra API'et i stedet for hardcoded
+  const currentStats = analyticsData?.stats[selectedPeriod];
+  const currentChartData = analyticsData?.chartData[selectedPeriod];
+  const recentTransactions = analyticsData?.recentTransactions || [];
+
+  // Chart helper functions (samme som før)
   const LineChartComponent = ({ data, dataKey, color, width = screenWidth - 80, height = 160 }) => {
     // Optimeret padding: mindre fra kant til tal, mere mellem tal og graf
-    const leftPadding = 45;  // Hvor grafen starter (mere plads mellem tal og graf)
+    const leftPadding = 45;
     const rightPadding = 20;
     const topPadding = 20;
     const bottomPadding = 40;
@@ -198,7 +217,7 @@ const DashboardScreen = () => {
         {yLabels.map((label, i) => (
           <SvgText
             key={i}
-            x={35}  // Øget fra 25 til 35 for at sikre tal ikke klippes
+            x={35}
             y={topPadding + (i * chartHeight / 4) + 4}
             fontSize="11"
             fill="#888"
@@ -257,7 +276,7 @@ const DashboardScreen = () => {
 
   const BarChartComponent = ({ data, dataKey, color, width = screenWidth - 80, height = 160 }) => {
     // Optimeret padding: mindre fra kant til tal, mere mellem tal og graf
-    const leftPadding = 45;  // Hvor grafen starter (mere plads mellem tal og graf)
+    const leftPadding = 45;
     const rightPadding = 20;
     const topPadding = 20;
     const bottomPadding = 40;
@@ -296,7 +315,7 @@ const DashboardScreen = () => {
         {yLabels.map((label, i) => (
           <SvgText
             key={i}
-            x={35}  // Øget fra 25 til 35 for at sikre tal ikke klippes
+            x={35}
             y={topPadding + (i * chartHeight / 4) + 4}
             fontSize="11"
             fill="#888"
@@ -346,14 +365,6 @@ const DashboardScreen = () => {
     );
   };
 
-  const recentTransactions = [
-    { time: "14:32", amount: "245", customer: "Marie Jensen", type: 'sale' as const },
-    { time: "14:18", amount: "89", customer: "Lars Andersen", type: 'sale' as const },
-    { time: "14:05", amount: "156", customer: "Anna Petersen", type: 'refund' as const },
-    { time: "13:45", amount: "320", customer: "Michael Nielsen", type: 'sale' as const },
-    { time: "13:22", amount: "78", customer: "Sofia Hansen", type: 'sale' as const },
-  ];
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
@@ -361,11 +372,12 @@ const DashboardScreen = () => {
       {/* Header - Fixed */}
       <View style={styles.headerContainer}>
         <View style={styles.header}>
-          <Text style={styles.storeName}>Nørrebro Butik</Text>
+          {/* Nu bruger vi rigtig merchant data! */}
+          <Text style={styles.storeName}>{merchantInfo?.name || 'Loading...'}</Text>
           <Text style={styles.welcomeText}>Dashboard</Text>
         </View>
 
-        {/* Sticky Tabs */}
+        {/* Sticky Tabs - SUPERFAST switching nu! ⚡ */}
         <View style={styles.stickyTabsContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScrollView}>
             {tabs.map((tab) => (
@@ -375,7 +387,10 @@ const DashboardScreen = () => {
                   styles.tab,
                   selectedPeriod === tab.key && styles.activeTab
                 ]}
-                onPress={() => setSelectedPeriod(tab.key)}
+                onPress={() => {
+                  console.log(`🚀 Skifter til ${tab.label} - INGEN API kald!`);
+                  setSelectedPeriod(tab.key); // Øjeblikkelig skift!
+                }}
               >
                 <Text style={[
                   styles.tabText,
@@ -390,29 +405,29 @@ const DashboardScreen = () => {
       </View>
       
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Metrics */}
+        {/* Metrics - nu med rigtig API data */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{currentStats.subtitle}</Text>
+          <Text style={styles.sectionTitle}>{currentStats?.subtitle}</Text>
           <View style={styles.metricsGrid}>
             <MetricCard
               title="Kunder"
-              value={currentStats.customers}
+              value={currentStats?.customers?.toString() || '0'}
               color="#4FD300"
             />
             <MetricCard
               title="Transaktioner"
-              value={currentStats.transactions}
+              value={currentStats?.transactions?.toString() || '0'}
               color="#00D4FF"
             />
             <MetricCard
               title="Omsætning"
-              value={`${currentStats.revenue} kr`}
+              value={`${currentStats?.revenue?.toLocaleString('da-DK') || '0'} kr`}
               color="#FF6B00"
             />
           </View>
         </View>
 
-        {/* Charts Section */}
+        {/* Charts Section - med rigtig data */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Udvikling</Text>
           
@@ -420,11 +435,13 @@ const DashboardScreen = () => {
           <View style={styles.chartContainer}>
             <Text style={styles.chartTitle}>Kunder</Text>
             <View style={styles.chartWrapper}>
-              <LineChartComponent 
-                data={currentChartData}
-                dataKey="customers"
-                color="#4FD300"
-              />
+              {currentChartData && (
+                <LineChartComponent 
+                  data={currentChartData}
+                  dataKey="customers"
+                  color="#4FD300"
+                />
+              )}
             </View>
           </View>
 
@@ -432,11 +449,13 @@ const DashboardScreen = () => {
           <View style={styles.chartContainer}>
             <Text style={styles.chartTitle}>Transaktioner</Text>
             <View style={styles.chartWrapper}>
-              <BarChartComponent 
-                data={currentChartData}
-                dataKey="transactions"
-                color="#00D4FF"
-              />
+              {currentChartData && (
+                <BarChartComponent 
+                  data={currentChartData}
+                  dataKey="transactions"
+                  color="#00D4FF"
+                />
+              )}
             </View>
           </View>
 
@@ -444,24 +463,26 @@ const DashboardScreen = () => {
           <View style={styles.chartContainer}>
             <Text style={styles.chartTitle}>Omsætning (kr)</Text>
             <View style={styles.chartWrapper}>
-              <LineChartComponent 
-                data={currentChartData}
-                dataKey="revenue"
-                color="#FF6B00"
-              />
+              {currentChartData && (
+                <LineChartComponent 
+                  data={currentChartData}
+                  dataKey="revenue"
+                  color="#FF6B00"
+                />
+              )}
             </View>
           </View>
         </View>
 
-        {/* Recent Transactions */}
+        {/* Recent Transactions - med rigtig API data */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Seneste transaktioner</Text>
           <View style={styles.transactionsContainer}>
-            {recentTransactions.map((transaction, index) => (
+            {recentTransactions.map((transaction) => (
               <TransactionItem
-                key={index}
+                key={transaction.id}
                 time={transaction.time}
-                amount={transaction.amount}
+                amount={transaction.amount.toString()}
                 customer={transaction.customer}
                 type={transaction.type}
               />
@@ -628,6 +649,49 @@ const styles = StyleSheet.create({
   },
   chartWrapper: {
     alignItems: 'center',
+  },
+  // Nye styles til loading og error states
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+  },
+  loadingText: {
+    color: '#fff',
+    fontSize: 16,
+    marginTop: 15,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+    paddingHorizontal: 40,
+  },
+  errorText: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  errorMessage: {
+    color: '#888',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 30,
+  },
+  retryButton: {
+    backgroundColor: '#4FD300',
+    paddingHorizontal: 30,
+    paddingVertical: 15,
+    borderRadius: 25,
+  },
+  retryButtonText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 
